@@ -1,4 +1,7 @@
 import streamlit as st
+import groq
+
+client = groq.Groq(api_key=st.secrets["GROQ_KEY"])
 
 st.title("Gadget Shop AI")
 
@@ -13,6 +16,7 @@ knowledge_base = [
   "The Airpods Pro costs 12,000 pesos with noise cancellation.",
   "Order processing takes 24hours before shipping.",
   "We have a physical store in SM Mall of Asia, Metro Manila."
+  "The owner of the Shop is Anzar Pogi"
 ]
 
 def retrieve(q):
@@ -26,6 +30,14 @@ def retrieve(q):
   scored.sort(reverse=True)
   best = scored[0]
   return best
+
+def build_context(q):
+  context = []
+  for doc in knowledge_base:
+    matches = sum(1 for word in q.split() if word in doc.lower())
+    if matches > 0:
+      context.append(doc)
+  return ";".join(context[:3])
 
 products = [
   {"name": "iPhone 15", "price": 45000, "stock": 10},
@@ -60,46 +72,29 @@ if question:
 
   st.session_state.messages.append({"role": "user", "content": question})
   
-  # Simple response logic 
   q = question.lower()
 
-  if "hello" in q or "hi" in q:
-    intent = "greeting"
-  elif "price" in q or "magkano" in q or "how much" in q or "cost" in q:
-    intent = "price"
-  elif "stock" in q or "available" in q or "available pa" in q:
-    intent = "stock"
-  elif "hours" in q or "open" in q or "oras" in q or "bukas"in q:
-    intent = "hours"
-  elif "thank" in q or "salamat" in q:
-    intent = "thanks"
-  else:
-    intent = "unknown"
+  try:
+    context = build_context(q)
 
-  product = find_product(q)
+    system_prompt = (
+      "You are Gadget Shop AI, a helpful assistant for a gadget shop in the Philippines. "
+      "Answer in Taglish if the user asks in Taglish, otherwise answer in English. "
+      "Be friendly, concise, and helpful.\n\n"
+      f"Knowledge base (use as reference if relevant): {context}"
+    )
 
-  if intent == "greeting":
-    answer = "Hello! Ask me about products."
-  elif intent == "price":
-    if product:
-      answer = f"The product {product['name']} costs P{product['price']:,} pesos."
-    else:
-      answer = "Whic product? Try asking 'price of iPhone 15'"
-  elif intent == "stock":
-    if product:
-      answer = f"We have {product['stock']} units of {product['name']} in stock."
-    else:
-      answer = "Whic product? Try asking 'Do you have stock of Airpods'"
-  elif intent == "hours":
-    answer = "We are open from 9:00 AM to 9:00 PM daily."
-  elif intent == "thanks":
-    answer = "You're welcome!"
-  else:
-    score, index, best_doc = retrieve(q)
-    if score > 0:
-      answer = f"I found relevant info: {best_doc}"
-    else:
-      answer = "Sorry, I don't have an answer for that yet."
+    response = client.chat.completions.create(
+      model="llama-3.3-70b-versatile",
+      messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Customer question: {question}"}
+      ]
+    )
+    answer = response.choices[0].message.content
+
+  except Exception as e:
+    answer = f"Sorry, may problema sa AI connection: {e}"
 
   st.session_state.messages.append({"role": "assistant", "content": answer})
 
